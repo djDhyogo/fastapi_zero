@@ -179,3 +179,7 @@ pyrightconfig.json
 
 # mac os
 .DS_Store
+
+
+# project stuff
+database.db
