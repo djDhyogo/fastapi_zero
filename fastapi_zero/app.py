@@ -1,19 +1,20 @@
 from http import HTTPStatus
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from fastapi_zero.database import get_session
+from fastapi_zero.models import User
 from fastapi_zero.schemas import (
     Message,
-    UserDB,
     UserList,
     UserPublic,
     UserSchema,
 )
 
 app = FastAPI()
-
-databese = []
 
 
 @app.get('/', status_code=HTTPStatus.OK, response_model=Message)
@@ -47,10 +48,34 @@ async def retornar_html():
 
 
 @app.post('/users/', status_code=HTTPStatus.CREATED, response_model=UserPublic)
-def create_user(user: UserSchema):
-    user_with_id = UserDB(**user.model_dump(), id=len(databese) + 1)
-    databese.append(user_with_id)
-    return user_with_id
+def create_user(user: UserSchema, session=Depends(get_session)):
+    db_user = session.scalar(
+        select(User).where(
+            (User.username == user.username) | (User.email == user.email)
+        )
+    )
+
+    if db_user:
+        if db_user.username == user.username:
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail='Username already exists',
+            )
+        elif db_user.email == user.email:
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail='Email already exists',
+            )
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        password=user.password,
+    )
+    session.add(db_user)  # adiciona Sesion
+    session.commit()  # envia para o banco
+    session.refresh(db_user)  # atualiza a sesion
+
+    return db_user
 
 
 @app.get(
@@ -58,8 +83,14 @@ def create_user(user: UserSchema):
     status_code=HTTPStatus.OK,
     response_model=UserList,
 )
-def read_users():
-    return {'users': databese}
+def read_users(
+    limit: int = 10, offset: int = 0, session: Session = Depends(get_session)
+):
+    users = session.scalars(
+        select(User).limit(limit).offset(offset),
+    )
+
+    return {'users': users}
 
 
 @app.put(
@@ -67,37 +98,53 @@ def read_users():
     status_code=HTTPStatus.OK,
     response_model=UserPublic,
 )
-def update_user(user_id: int, user: UserSchema):
-    user_with_id = UserDB(**user.model_dump(), id=user_id)
-
-    if user_id < 1 or user_id > len(databese):
+def update_user(
+    user_id: int, user: UserSchema, session: Session = Depends(get_session)
+):
+    db_user = session.scalar(select(User).where(User.id == user_id))
+    if not db_user:
+        # O usuario com esse id  nao existe no banco
         raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
             detail='User not found!',
+            status_code=HTTPStatus.NOT_FOUND,
         )
-    databese[user_id - 1] = user_with_id
-    return user_with_id
+
+    db_user.username = user.username
+    db_user.password = user.password
+    db_user.email = user.email
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+
+    return db_user
 
 
 @app.delete(
-    '/users/{user_id}', status_code=HTTPStatus.OK, response_model=UserPublic
+    '/users/{user_id}', status_code=HTTPStatus.OK, response_model=Message
 )
-def delete_user(user_id: int):
-    if user_id < 1 or user_id > len(databese):
+def delete_user(user_id: int, session: Session = Depends(get_session)):
+    db_user = session.scalar(select(User).where(User.id == user_id))
+    if not db_user:
+        # O usuario com esse id  nao existe no banco
         raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
             detail='User not found!',
+            status_code=HTTPStatus.NOT_FOUND,
         )
-    return databese.pop(user_id - 1)
+    session.delete(db_user)
+    session.commit()
+
+    return Message(message='User deleted!')
 
 
-@app.get(
-    '/users/{user_id}', status_code=HTTPStatus.OK, response_model=UserPublic
-)
-def get_user(user_id: int):
-    if user_id < 1 or user_id > len(databese):
+@app.get('/users/{user_id}', response_model=UserPublic)
+def read_user__exercicio(
+    user_id: int, session: Session = Depends(get_session)
+):
+    db_user = session.scalar(select(User).where(User.id == user_id))
+
+    if not db_user:
         raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='User not found!',
+            status_code=HTTPStatus.NOT_FOUND, detail='User not found!'
         )
-    return databese[user_id - 1]
+
+    return db_user
