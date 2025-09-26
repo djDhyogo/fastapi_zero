@@ -3,6 +3,7 @@ from http import HTTPStatus
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fastapi_zero.database import get_session
@@ -48,7 +49,7 @@ async def retornar_html():
 
 
 @app.post('/users/', status_code=HTTPStatus.CREATED, response_model=UserPublic)
-def create_user(user: UserSchema, session=Depends(get_session)):
+def create_user(user: UserSchema, session: Session = Depends(get_session)):
     db_user = session.scalar(
         select(User).where(
             (User.username == user.username) | (User.email == user.email)
@@ -109,14 +110,21 @@ def update_user(
             status_code=HTTPStatus.NOT_FOUND,
         )
 
-    db_user.username = user.username
-    db_user.password = user.password
-    db_user.email = user.email
-    session.add(db_user)
-    session.commit()
-    session.refresh(db_user)
+    try:
+        db_user.username = user.username
+        db_user.password = user.password
+        db_user.email = user.email
+        session.add(db_user)
+        session.commit()
+        session.refresh(db_user)
+        return db_user
 
-    return db_user
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            detail='Username or email already registered!',
+            status_code=HTTPStatus.CONFLICT,
+        )
 
 
 @app.delete(
