@@ -100,6 +100,20 @@ def test_read_users(client: TestClient, user: User):
     }
 
 
+def test_read_users_id(client: TestClient, user: User):
+    """
+    Testa se o endpoint GET /users/ retorna a lista de usuários.
+    para isso ele Cria um usuário usando o fixture create_user_test
+    """
+    response = client.get('/users/1')
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        'username': 'Teste',
+        'email': 'teste@test.com',
+        'id': 1,
+    }
+
+
 def test_read_users_with_users(client: TestClient, user: User):
     """
     Testa se o endpoint GET /users/ retorna a lista de usuários.
