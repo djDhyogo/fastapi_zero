@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from fastapi_zero.settings import Settings
 
-engine = create_engine(Settings().DATABASSE_URL)  # type: ignore
+engine = create_engine(Settings().DATABASE_URL)  # type: ignore
 
 
 def get_session():
